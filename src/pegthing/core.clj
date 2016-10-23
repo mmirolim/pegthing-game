@@ -1,13 +1,16 @@
 (ns pegthing.core
   (require [clojure.set :as set])
-  (:gen-class))
+  (:gen-class)
+  (:require [clojure.string :as str]))
 
-(declare successful-move prompt-move game-over query-rows)
+(declare successful-move prompt-move user-entered-valid-move user-entered-invalid-move game-over query-rows prompt-rows)
 
+;; TODO reuse std buffer
 (defn -main
   "I don't do a whole lot ... yet."
   [& args]
-  (println "Hello, World!"))
+  (println "Hello, let's play Peg thing!")
+  (prompt-rows))
 
 (defn tri*
   "Generates lazy sequence of triangular numbers"
@@ -202,9 +205,88 @@
   (doseq [row-num (range 1 (inc (:rows board)))]
     (println (render-row board row-num))))
 
+;; Player interactions
+(defn letter->pos
+  "Converts a letter string to the corresponding position"
+  [letter]
+  (inc (- (int (first letter)) alpha-start)))
 
-(defn fib
-  "Gnerates lazy sequence of fibonacci numbers"
-  ([] (fib 1 1))
-  ([n-2 n-1]
-   (cons n-2 (lazy-seq (fib n-1 (+ n-1 n-2))))))
+(defn get-input
+  "Waits for user to enter text and hit enter, then cleans the input"
+  ([] (get-input nil))
+  ([default]
+   (let [input (str/trim (read-line))]
+     (if (and (empty? input) (nil? default)) ; TODO handle proper exit with stats
+       (do
+         (println "Bye!")
+         (System/exit 0)))
+     (if (empty? input)
+       default
+       (str/lower-case input)))))
+
+(defn characters-as-strings
+  "Filters nonalphabetic characters from input and returns collection of letters"
+  [string]
+  (re-seq #"[a-zA-Z]" string))
+
+(defn prompt-move
+  "Reads the player's input and acts on it"
+  [board]
+  (println "\nHere's your board =>")
+  (print-board board)
+  (println "Move from where to where? Enter two letters =>")
+  (let [input (map letter->pos (characters-as-strings (get-input)))]
+    (if-let [new-board (make-move board (first input) (second input))]
+      (user-entered-valid-move new-board)
+      (user-entered-invalid-move board))))
+
+(defn user-entered-valid-move
+  "Handles the next step after a user has entered a valid move"
+  [board]
+  (if (can-move? board)
+    (prompt-move board)
+    (game-over board)))
+
+(defn user-entered-invalid-move
+  "Handles the next step after a user has entered an invalid move"
+  [board]
+  (println (colorize "\nThis was an invalid move\n" :red))
+  (prompt-move board))
+
+
+(defn game-over
+  "Announce the game is over and prompt to play again"
+  [board]
+  (let [remaining-pegs (count (filter :pegged (vals board)))]
+    (println (colorize (str "Game over! You had " remaining-pegs " pegs left") :green))
+    (print-board board)
+    (println "Play again? y/n [y]")
+    (let [input (get-input "y")]
+      (if (= "y" input)
+        (prompt-rows)
+        (do
+          (println "Bye!")
+          (System/exit 0))))))
+
+
+(defn prompt-empty-peg
+  "Ask and removes peg from board"
+  [board]
+  (println "Here's your board")
+  (print-board board)
+  (println (colorize "Remove which peg? [e]" :green))
+  (prompt-move (remove-peg board (letter->pos (get-input "e")))))
+
+
+(defn prompt-rows
+  "Gets number of rows for a board from user"
+  []
+  (println (colorize "How many rows? [5]" :green))
+  (let [rows (Integer. (get-input 5))
+        board (new-board rows)]
+    (if (>= rows 4)
+      (prompt-empty-peg board)
+      (do
+        (println "Min rows number is 4")
+        (prompt-rows)))))
+
